@@ -2,8 +2,8 @@
 
 | Código | Nombre | Correo |
 |:---|:---|:---|
-| 542378923 | Fulanito de Tal | fulanito.tal@miuniremington.edu.co |
-| 542378923 | Fulanito de Tal | fulanito.tal@miuniremington.edu.co |
+| 1085257327 | DIAZ WILLIAM | william.diaz.7327@miuniremington.edu.co |
+| 1085330709 | TUMBACO ANYERZON | anyerson.tumbaco.0709@miuniremington.edu.co |
 
 ---
 
