@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="mb-4">{{ quiz.title }}</h1>
+<p class="lead mb-4">{{ quiz.description }}</p>
+
+<form action="{{ url_for('submit_quiz', quiz_id=quiz.id) }}" method="POST">
+    {% for i, question in enumerate(quiz.questions) %}
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Pregunta {{ i + 1 }}</h5>
+            <p class="card-text">{{ question.text }}</p>
+            
+            <div class="list-group">
+                {% for j, option in enumerate(question.options) %}
+                <label class="list-group-item">
+                    <input type="radio" 
+                           name="question_{{ i }}" 
+                           value="{{ j }}" 
+                           class="form-check-input me-2" 
+                           required>
+                    {{ option }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    
+    <div class="d-grid gap-2 col-md-6 mx-auto">
+        <button type="submit" class="btn btn-primary btn-lg">Enviar Respuestas</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+</form>
+
+{% if quiz.time_limit %}
+<script>
+    // Timer functionality for time-limited quizzes
+    const timeLimit = {{ quiz.time_limit }} * 60; // Convert to seconds
+    let timeLeft = timeLimit;
+    
+    function updateTimer() {
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        document.getElementById('timer').textContent = 
+            `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+        if (timeLeft <= 0) {
+            document.querySelector('form').submit();
+        } else {
+            timeLeft--;
+            setTimeout(updateTimer, 1000);
+        }
+    }
+    
+    updateTimer();
+</script>
+{% endif %}
+{% endblock %}

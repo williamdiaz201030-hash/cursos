@@ -1,51 +1,105 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
-
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 # Define la base declarativa
 Base = declarative_base()
 
-# TODO: Crea tus modelos de datos aquí.
-# Cada clase de modelo representa una tabla en tu base de datos.
-# Debes renombrar YourModel por el nombre de la Clase según el servicio
-class YourModel(Base):
-    """
-    Plantilla de modelo de datos para un recurso.
-    Ajusta esta clase según los requisitos de tu tema.
-    """
-    __tablename__ = "[nombre_de_tu_tabla]"
-
-    # Columnas de la tabla
+# Modelos SQLAlchemy para la base de datos
+class Course(Base):
+    __tablename__ = "courses"
+    
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
+    title = Column(String, index=True)
     description = Column(String)
+    instructor_id = Column(String, index=True)  # MongoDB ID del instructor
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    modules = relationship("Module", back_populates="course")
 
-    # TODO: Agrega más columnas según sea necesario.
-    # Por ejemplo:
-    # is_active = Column(Boolean, default=True)
-    # foreign_key_id = Column(Integer, ForeignKey("otra_tabla.id"))
+class Module(Base):
+    __tablename__ = "modules"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(String)
+    order = Column(Integer)
+    course_id = Column(Integer, ForeignKey("courses.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    course = relationship("Course", back_populates="modules")
+    lessons = relationship("Lesson", back_populates="module")
 
-    def __repr__(self):
-        return f"<YourModel(id={self.id}, name='{self.name}')>"
+class Lesson(Base):
+    __tablename__ = "lessons"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(String)
+    order = Column(Integer)
+    module_id = Column(Integer, ForeignKey("modules.id"))
+    content_id = Column(String)  # MongoDB ID del contenido multimedia
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    module = relationship("Module", back_populates="lessons")
 
-# TODO: Define los modelos Pydantic para la validación de datos.
-# Estos modelos se usarán en los endpoints de FastAPI para validar la entrada y salida.
-
-class YourModelBase(BaseModel):
-    name: str
+# Modelos Pydantic para la API
+class LessonBase(BaseModel):
+    title: str
     description: Optional[str] = None
-    # TODO: Agrega los campos que se necesitan para crear o actualizar un recurso.
+    order: int
+    content_id: Optional[str] = None
 
-class YourModelCreate(YourModelBase):
+class LessonCreate(LessonBase):
+    module_id: int
+
+class Lesson(LessonBase):
+    id: int
+    module_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class ModuleBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    order: int
+
+class ModuleCreate(ModuleBase):
+    course_id: int
+
+class Module(ModuleBase):
+    id: int
+    course_id: int
+    created_at: datetime
+    updated_at: datetime
+    lessons: List[Lesson] = []
+
+    class Config:
+        orm_mode = True
+
+class CourseBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    instructor_id: str
+
+class CourseCreate(CourseBase):
     pass
 
-class YourModelRead(YourModelBase):
+class Course(CourseBase):
     id: int
     created_at: datetime
-    
+    updated_at: datetime
+    is_active: bool
+    modules: List[Module] = []
+
     class Config:
-        orm_mode = True # Habilita la compatibilidad con ORM
+        orm_mode = True

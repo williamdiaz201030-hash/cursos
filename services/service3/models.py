@@ -1,51 +1,81 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, JSON
+from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel
-from typing import Optional
-
-# Define la base declarativa
 Base = declarative_base()
 
-# TODO: Crea tus modelos de datos aquí.
-# Cada clase de modelo representa una tabla en tu base de datos.
-# Debes renombrar YourModel por el nombre de la Clase según el servicio
-class YourModel(Base):
-    """
-    Plantilla de modelo de datos para un recurso.
-    Ajusta esta clase según los requisitos de tu tema.
-    """
-    __tablename__ = "[nombre_de_tu_tabla]"
-
-    # Columnas de la tabla
+class Quiz(Base):
+    __tablename__ = "quizzes"
+    
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
+    title = Column(String, index=True)
     description = Column(String)
+    lesson_id = Column(Integer, index=True)
+    course_id = Column(Integer, index=True)
+    time_limit = Column(Integer, nullable=True)  # Time limit in minutes, null for no limit
+    passing_score = Column(Float, default=60.0)  # Percentage needed to pass
+    questions = Column(JSON)  # List of questions with answers and correct answer
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
-    # TODO: Agrega más columnas según sea necesario.
-    # Por ejemplo:
-    # is_active = Column(Boolean, default=True)
-    # foreign_key_id = Column(Integer, ForeignKey("otra_tabla.id"))
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.id"))
+    student_id = Column(String, index=True)
+    answers = Column(JSON)  # Student's answers
+    score = Column(Float)
+    passed = Column(Boolean)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    
+    quiz = relationship("Quiz")
 
-    def __repr__(self):
-        return f"<YourModel(id={self.id}, name='{self.name}')>"
+# Pydantic models for API
+class QuestionBase(BaseModel):
+    text: str
+    options: List[str]
+    correct_option: int
 
-# TODO: Define los modelos Pydantic para la validación de datos.
-# Estos modelos se usarán en los endpoints de FastAPI para validar la entrada y salida.
-
-class YourModelBase(BaseModel):
-    name: str
+class QuizBase(BaseModel):
+    title: str
     description: Optional[str] = None
-    # TODO: Agrega los campos que se necesitan para crear o actualizar un recurso.
+    lesson_id: int
+    course_id: int
+    time_limit: Optional[int] = None
+    passing_score: float = 60.0
+    questions: List[QuestionBase]
 
-class YourModelCreate(YourModelBase):
+class QuizCreate(QuizBase):
     pass
 
-class YourModelRead(YourModelBase):
+class Quiz(QuizBase):
     id: int
     created_at: datetime
-    
+    updated_at: datetime
+
     class Config:
-        orm_mode = True # Habilita la compatibilidad con ORM
+        from_attributes = True
+
+class AnswerSubmission(BaseModel):
+    quiz_id: int
+    student_id: str
+    answers: Dict[str, int]  # Question number -> Selected option number
+
+class QuizAttemptBase(BaseModel):
+    quiz_id: int
+    student_id: str
+    answers: Dict[str, int]
+    score: float
+    passed: bool
+
+class QuizAttempt(QuizAttemptBase):
+    id: int
+    started_at: datetime
+    completed_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

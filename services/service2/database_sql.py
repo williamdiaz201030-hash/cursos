@@ -1,6 +1,5 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 import os
 import sys
 sys.path.insert(0, '/app')
@@ -12,7 +11,7 @@ except ImportError:
     Base = declarative_base()
 
 # PostgreSQL Database URL
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@courses-db:5432/courses_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@progress-db:5432/progress_db")
 
 # Create SQLAlchemy engine
 engine = create_engine(DATABASE_URL)

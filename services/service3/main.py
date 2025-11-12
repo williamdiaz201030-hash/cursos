@@ -1,41 +1,124 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List, Dict
+from datetime import datetime
+import sys
+sys.path.insert(0, '/app')
+
+import models
+from database_sql import get_db, create_db_and_tables
+import requests
 import os
 
-# TODO: Importar el módulo de base de datos y los modelos
-# from .database import [tu_motor_de_base_de_datos]
-# from .models import [tus_modelos]
+app = FastAPI(title="Evaluations Service")
 
-# TODO: Configurar la URL de la base de datos desde las variables de entorno
-# DATABASE_URL = os.getenv("DATABASE_URL")
-
-app = FastAPI()
-
-# TODO: Crea una instancia del router para organizar los endpoints
-router = APIRouter()
-
-# TODO: Define un endpoint raíz o de salud para verificar que el servicio está funcionando
-@app.get("/")
-def read_root():
-    return {"message": "Servicio de [nombre_del_servicio] en funcionamiento."}
+# Create tables on startup
+@app.on_event("startup")
+async def startup_event():
+    try:
+        create_db_and_tables()
+    except Exception as e:
+        print(f"Warning: could not create DB tables at startup: {e}")
 
 @app.get("/health")
 def health_check():
-    """Endpoint de salud para verificar el estado del servicio."""
-    return {"status": "ok"}
+    """Health check endpoint"""
+    return {"status": "ok", "service": "evaluations"}
 
-# TODO: Implementa los endpoints de tu microservicio aquí
-# Ejemplo de un endpoint GET:
-# @router.get("/[ruta_del_recurso]/")
-# async def get_[recurso]():
-#     # TODO: Agrega la lógica de tu negocio aquí
-#     return {"data": "Aquí van tus datos."}
+# Quiz endpoints
+@app.post("/quizzes/", response_model=models.Quiz)
+def create_quiz(quiz: models.QuizCreate, db: Session = Depends(get_db)):
+    db_quiz = models.Quiz(**quiz.dict())
+    db.add(db_quiz)
+    db.commit()
+    db.refresh(db_quiz)
+    return db_quiz
 
-# Ejemplo de un endpoint POST:
-# @router.post("/[ruta_del_recurso]/")
-# async def create_[recurso](item: [tu_modelo_pydantic]):
-#     # TODO: Agrega la lógica para crear un nuevo recurso
-#     return {"message": "[recurso] creado exitosamente."}
+@app.get("/quizzes/{quiz_id}", response_model=models.Quiz)
+def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
+    quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    return quiz
 
+@app.get("/lessons/{lesson_id}/quizzes/", response_model=List[models.Quiz])
+def get_lesson_quizzes(lesson_id: int, db: Session = Depends(get_db)):
+    quizzes = db.query(models.Quiz)\
+        .filter(models.Quiz.lesson_id == lesson_id)\
+        .all()
+    return quizzes
 
-# TODO: Incluir el router en la aplicación principal
-# app.include_router(router, prefix="/api/v1")
+# Quiz attempt endpoints
+@app.post("/quiz-attempts/", response_model=models.QuizAttempt)
+async def submit_quiz(
+    submission: models.AnswerSubmission,
+    db: Session = Depends(get_db)
+):
+    # Get the quiz
+    quiz = db.query(models.Quiz).filter(models.Quiz.id == submission.quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    
+    # Calculate score
+    total_questions = len(quiz.questions)
+    correct_answers = 0
+    
+    for i, question in enumerate(quiz.questions):
+        if str(i) in submission.answers and submission.answers[str(i)] == question["correct_option"]:
+            correct_answers += 1
+    
+    score = (correct_answers / total_questions) * 100
+    passed = score >= quiz.passing_score
+    
+    # Create quiz attempt record
+    db_attempt = models.QuizAttempt(
+        quiz_id=submission.quiz_id,
+        student_id=submission.student_id,
+        answers=submission.answers,
+        score=score,
+        passed=passed,
+        completed_at=datetime.utcnow()
+    )
+    
+    db.add(db_attempt)
+    db.commit()
+    db.refresh(db_attempt)
+    
+    # Update progress service if quiz was passed
+    if passed:
+        try:
+            progress_service_url = os.getenv("PROGRESS_SERVICE_URL", "http://service2-service:8003")
+            requests.post(
+                f"{progress_service_url}/progress/lesson/",
+                json={
+                    "student_id": submission.student_id,
+                    "lesson_id": quiz.lesson_id,
+                    "course_id": quiz.course_id,
+                    "status": "completed"
+                }
+            )
+        except Exception as e:
+            print(f"Error updating progress service: {e}")
+    
+    return db_attempt
+
+@app.get("/quiz-attempts/{attempt_id}", response_model=models.QuizAttempt)
+def get_quiz_attempt(attempt_id: int, db: Session = Depends(get_db)):
+    attempt = db.query(models.QuizAttempt).filter(models.QuizAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Quiz attempt not found")
+    return attempt
+
+@app.get("/students/{student_id}/quiz-attempts/", response_model=List[models.QuizAttempt])
+def get_student_attempts(student_id: str, db: Session = Depends(get_db)):
+    attempts = db.query(models.QuizAttempt)\
+        .filter(models.QuizAttempt.student_id == student_id)\
+        .all()
+    return attempts
+
+@app.get("/quizzes/{quiz_id}/attempts/", response_model=List[models.QuizAttempt])
+def get_quiz_attempts(quiz_id: int, db: Session = Depends(get_db)):
+    attempts = db.query(models.QuizAttempt)\
+        .filter(models.QuizAttempt.quiz_id == quiz_id)\
+        .all()
+    return attempts

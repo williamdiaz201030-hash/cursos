@@ -1,41 +1,93 @@
-from fastapi import FastAPI, APIRouter, HTTPException
-import os
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+import sys
+sys.path.insert(0, '/app')
 
-# TODO: Importar el módulo de base de datos y los modelos
-# from .database import [tu_motor_de_base_de_datos]
-# from .models import [tus_modelos]
+import models
+from database_sql import get_db, create_db_and_tables
+from database_mongo import ContentStore
 
-# TODO: Configurar la URL de la base de datos desde las variables de entorno
-# DATABASE_URL = os.getenv("DATABASE_URL")
+app = FastAPI(title="Courses Service")
 
-app = FastAPI()
-
-# TODO: Crea una instancia del router para organizar los endpoints
-router = APIRouter()
-
-# TODO: Define un endpoint raíz o de salud para verificar que el servicio está funcionando
-@app.get("/")
-def read_root():
-    return {"message": "Servicio de [nombre_del_servicio] en funcionamiento."}
+# Create tables on startup
+@app.on_event("startup")
+async def startup_event():
+    try:
+        create_db_and_tables()
+    except Exception as e:
+        # Log and continue so the service doesn't crash immediately if the DB isn't ready.
+        print(f"Warning: could not create DB tables at startup: {e}")
 
 @app.get("/health")
 def health_check():
-    """Endpoint de salud para verificar el estado del servicio."""
-    return {"status": "ok"}
+    """Health check endpoint"""
+    return {"status": "ok", "service": "courses"}
 
-# TODO: Implementa los endpoints de tu microservicio aquí
-# Ejemplo de un endpoint GET:
-# @router.get("/[ruta_del_recurso]/")
-# async def get_[recurso]():
-#     # TODO: Agrega la lógica de tu negocio aquí
-#     return {"data": "Aquí van tus datos."}
+# Course endpoints
+@app.post("/courses/", response_model=models.Course)
+def create_course(course: models.CourseCreate, db: Session = Depends(get_db)):
+    db_course = models.Course(**course.dict())
+    db.add(db_course)
+    db.commit()
+    db.refresh(db_course)
+    return db_course
 
-# Ejemplo de un endpoint POST:
-# @router.post("/[ruta_del_recurso]/")
-# async def create_[recurso](item: [tu_modelo_pydantic]):
-#     # TODO: Agrega la lógica para crear un nuevo recurso
-#     return {"message": "[recurso] creado exitosamente."}
+@app.get("/courses/", response_model=List[models.Course])
+def list_courses(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+    courses = db.query(models.Course).offset(skip).limit(limit).all()
+    return courses
 
+@app.get("/courses/{course_id}", response_model=models.Course)
+def get_course(course_id: int, db: Session = Depends(get_db)):
+    course = db.query(models.Course).filter(models.Course.id == course_id).first()
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return course
 
-# TODO: Incluir el router en la aplicación principal
-# app.include_router(router, prefix="/api/v1")
+# Module endpoints
+@app.post("/modules/", response_model=models.Module)
+def create_module(module: models.ModuleCreate, db: Session = Depends(get_db)):
+    db_module = models.Module(**module.dict())
+    db.add(db_module)
+    db.commit()
+    db.refresh(db_module)
+    return db_module
+
+@app.get("/courses/{course_id}/modules/", response_model=List[models.Module])
+def list_course_modules(course_id: int, db: Session = Depends(get_db)):
+    modules = db.query(models.Module).filter(models.Module.course_id == course_id).all()
+    return modules
+
+# Lesson endpoints
+@app.post("/lessons/", response_model=models.Lesson)
+async def create_lesson(lesson: models.LessonCreate, db: Session = Depends(get_db)):
+    # If there's content_id, verify it exists in MongoDB
+    if lesson.content_id:
+        content = ContentStore.get_content(lesson.content_id)
+        if not content:
+            raise HTTPException(status_code=404, detail="Content not found")
+    
+    db_lesson = models.Lesson(**lesson.dict())
+    db.add(db_lesson)
+    db.commit()
+    db.refresh(db_lesson)
+    return db_lesson
+
+@app.get("/modules/{module_id}/lessons/", response_model=List[models.Lesson])
+def list_module_lessons(module_id: int, db: Session = Depends(get_db)):
+    lessons = db.query(models.Lesson).filter(models.Lesson.module_id == module_id).all()
+    return lessons
+
+# Content endpoints
+@app.post("/content/")
+async def create_content(content_data: dict):
+    content_id = ContentStore.create_content(content_data)
+    return {"content_id": content_id}
+
+@app.get("/content/{content_id}")
+async def get_content(content_id: str):
+    content = ContentStore.get_content(content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return content

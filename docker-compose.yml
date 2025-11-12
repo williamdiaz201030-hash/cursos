@@ -3,30 +3,46 @@ services:
   frontend:
     build: ./frontend
     container_name: frontend
+    networks:
+      - microservices-net
     ports:
       - "5000:5000"
     environment:
       - API_GATEWAY_URL=http://api-gateway:8000
     depends_on:
       - api-gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   api-gateway:
     build: ./api-gateway
     container_name: api-gateway
+    networks:
+      - microservices-net
     ports:
       - "8000:8000"
     depends_on:
       - auth-service
-    # Aquí puedes agregar los otros servicios base
+      - courses-service
+      - progress-service
+      - evaluations-service
 
   # Microservicio de Autenticación
   auth-service:
     build: ./services/authentication
     container_name: auth-service
+    networks:
+      - microservices-net
+      - auth-net
     ports:
       - "8001:8001"
     environment:
-      - DATABASE_URL=mongodb://auth-db:27017/auth_db
+      #- DATABASE_URL=mongodb://authuser:authpass123@auth-db:27017/auth_db?authSource=auth_db
+      - DATABASE_URL=mongodb://mongoadmin:mongopass123@auth-db:27017/auth_db?authSource=admin
     depends_on:
       - auth-db
 
@@ -34,40 +50,170 @@ services:
   auth-db:
     image: mongo:latest
     container_name: auth-db
+    networks:
+      - microservices-net
+      - auth-net
     ports:
       - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=mongoadmin
+      - MONGO_INITDB_ROOT_PASSWORD=mongopass123
+      - MONGO_INITDB_DATABASE=auth_db
     volumes:
       - auth_data:/data/db
+      - ./services/authentication/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
-  # --- Plantillas de Microservicios ---
-  # TODO: Copiar y modificar "service1" para cada servicio según el tema seleccionado
-  
-  # Microservicio de Nombre_del_microservicio
-  service1-service:
-     build: ./services/service1 
-     container_name: service1-service
-     ports:
-       - "8002:8002"
-     environment:
-       - DATABASE_URL=postgresql://user:password@service1-db:5432/service1_db
-     depends_on:
-       - service1-db
+  # Course Service
+  courses-service:
+    build: ./services/service1 
+    container_name: courses-service
+    networks:
+      - microservices-net
+      - courses-net
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres123@courses-db:5432/courses_db
+      - MONGO_URL=mongodb://coursesuser:coursespass123@courses-mongo:27017/courses_content?authSource=courses_content
+    depends_on:
+      - courses-db
+      - courses-mongo
 
-  # Base de datos para el servicio1
-  service1-db:
-     image: postgres:latest
-     container_name: service1-db
-     environment:
-       - POSTGRES_USER=user
-       - POSTGRES_PASSWORD=password
-       - POSTGRES_DB=service1_db
-     ports:
-       - "5432:5432"
-     volumes:
-       - service1_data:/var/lib/postgresql/data
+  courses-db:
+    image: postgres:latest
+    container_name: courses-db
+    networks:
+      - microservices-net
+      - courses-net
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_DB=courses_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - courses_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  courses-mongo:
+    image: mongo:latest
+    container_name: courses-mongo
+    networks:
+      - microservices-net
+      - courses-net
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=mongoadmin
+      - MONGO_INITDB_ROOT_PASSWORD=mongopass123
+      - MONGO_INITDB_DATABASE=courses_content
+    ports:
+      - "27018:27017"
+    volumes:
+      - courses_mongo_data:/data/db
+      - ./services/service1/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # Progress Service
+  progress-service:
+    build: ./services/service2
+    container_name: progress-service
+    networks:
+      - microservices-net
+      - progress-net
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres123@progress-db:5432/progress_db
+    depends_on:
+      - progress-db
+
+  progress-db:
+    image: postgres:latest
+    container_name: progress-db
+    networks:
+      - microservices-net
+      - progress-net
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_DB=progress_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - progress_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Evaluation Service
+  evaluations-service:
+    build: ./services/service3
+    container_name: evaluations-service
+    networks:
+      - microservices-net
+      - evaluations-net
+    ports:
+      - "8004:8004"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres123@evaluations-db:5432/evaluations_db
+      - PROGRESS_SERVICE_URL=http://progress-service:8003
+    depends_on:
+      - evaluations-db
+
+  evaluations-db:
+    image: postgres:latest
+    container_name: evaluations-db
+    networks:
+      - microservices-net
+      - evaluations-net
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_DB=evaluations_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - evaluations_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  microservices-net:  # Red principal para comunicación entre servicios
+    driver: bridge
+  auth-net:  # Red aislada para servicio de autenticación
+    driver: bridge
+  courses-net:  # Red aislada para servicio de cursos
+    driver: bridge
+  progress-net:  # Red aislada para servicio de progreso
+    driver: bridge
+  evaluations-net:  # Red aislada para servicio de evaluaciones
+    driver: bridge
 
 volumes:
-  auth_data:
-  service1_data:
-  service2_data:
-  service3_data:
+  auth_data:  # Datos persistentes de autenticación
+  courses_data:  # Datos relacionales de cursos
+  courses_mongo_data:  # Contenido de cursos
+  progress_data:  # Datos de progreso de estudiantes
+  evaluations_data:  # Datos de evaluaciones

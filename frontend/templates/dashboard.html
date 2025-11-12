@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="mb-4">Mi Dashboard</h1>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Mi Perfil</h5>
+                <p class="card-text">
+                    <strong>Nombre:</strong> {{ user.full_name }}<br>
+                    <strong>Email:</strong> {{ user.email }}<br>
+                    <strong>Tipo:</strong> {{ "Instructor" if user.user_type == "instructor" else "Estudiante" }}
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <h2 class="h4 mb-3">Mi Progreso</h2>
+        
+        {% for course_progress in progress %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">{{ course_progress.title }}</h5>
+                <div class="progress mb-3">
+                    <div class="progress-bar" role="progressbar" 
+                         style="width: {{ course_progress.progress_percentage }}%"
+                         aria-valuenow="{{ course_progress.progress_percentage }}" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                        {{ "%.1f"|format(course_progress.progress_percentage) }}%
+                    </div>
+                </div>
+                <p class="card-text">
+                    <small class="text-muted">
+                        {{ course_progress.completed_lessons }} de {{ course_progress.total_lessons }} lecciones completadas
+                    </small>
+                </p>
+                <a href="{{ url_for('course_detail', course_id=course_progress.course_id) }}" 
+                   class="btn btn-primary btn-sm">
+                    Continuar
+                </a>
+            </div>
+        </div>
+        {% else %}
+        <p>No estás inscrito en ningún curso todavía.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

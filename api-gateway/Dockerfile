@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia el resto del código.
 COPY . .
 
-# Define el comando para ejecutar la aplicación.
-# El puerto debe ser el mismo que se expone en docker-compose.yml (8000).
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Expone el puerto 8000
+EXPOSE 8000
+
+# Define el comando para ejecutar la aplicación
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
